@@ -1,0 +1,5 @@
+api_key = "KEYYYYYYYYYYYYYYYYYYY"
+audio_file = "audio.mp3"
+msg_limit = 18
+global_listen = false
+keycode = 420
