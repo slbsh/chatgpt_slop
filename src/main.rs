@@ -46,7 +46,10 @@ fn device<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error>
 
 const CONFIG_PATH: &str = "config.toml";
 static CONFIG: LazyLock<Config> = LazyLock::new(||
-	toml::from_str(&std::fs::read_to_string(CONFIG_PATH).unwrap()).unwrap());
+	toml::from_str(&std::fs::read_to_string(CONFIG_PATH).unwrap()).unwrap_or_else(|e| {
+		eprintln!("Error reading config: {e}");
+		std::process::exit(1);
+	}));
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
