@@ -3,19 +3,45 @@ use std::collections::VecDeque;
 use std::io::Write;
 
 use rdev::{Event, EventType, Key};
+use serde::Deserialize;
 
-#[derive(serde::Deserialize, Default)]
+#[derive(Deserialize, Default)]
 struct Config {
+	#[serde(deserialize_with = "api_key")]
 	api_key:    Box<str>,
 	#[serde(default)]
+	#[serde(deserialize_with = "prompt")]
 	prompt:     Box<str>,
 	audio_file: Box<str>,
 	msg_limit:  usize,
-	#[cfg(windows)]
+	#[serde(deserialize_with = "device")]
 	device:     Box<str>,
+	backend:    Box<str>,
 	#[serde(default)]
-	keycode: Option<u32>,
+	keycode:    Option<u32>,
 	global_listen: bool,
+}
+
+fn api_key<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
+	let s: &str = Deserialize::deserialize(de)?;
+	Ok(Box::from(format!("Bearer {s}")))
+}
+
+fn prompt<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
+	let s: &str = Deserialize::deserialize(de)?;
+	Ok(Box::from(format!(r#"{{"role": "system", "content": "{s}"}}"#)))
+}
+
+#[cfg(unix)]
+fn device<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
+	let s: &str = Deserialize::deserialize(de)?;
+	Ok(Box::from(s))
+}
+
+#[cfg(windows)]
+fn device<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
+	let s: &str = Deserialize::deserialize(de)?;
+	Ok(Box::from(format!("audio={s}")))
 }
 
 const CONFIG_PATH: &str = "config.toml";
@@ -28,17 +54,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		rdev::listen(|e| println!("{:?}", e)).unwrap();
 		return Ok(());
 	}
-
-	let auth_header = format!("Bearer {}", &*CONFIG.api_key);
-
-	#[cfg(unix)]
-	const BACKEND: &str = "alsa";
-	#[cfg(unix)]
-	const DEVICE: &str = "default";
-	#[cfg(windows)]
-	const BACKEND: &str = "dshow";
-	#[cfg(windows)]
-	static DEVICE: LazyLock<String> = LazyLock::new(|| format!("audio={}", &*CONFIG.device));
 
 	let mut messages: VecDeque<String> = VecDeque::new();
 	let client = reqwest::Client::new();
@@ -73,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		block("Press key to start");
 		
 		let mut cmd = std::process::Command::new("ffmpeg")
-			.args(["-y", "-loglevel", "error", "-f", BACKEND, "-i", &DEVICE, &CONFIG.audio_file])
+			.args(["-y", "-loglevel", "error", "-f", &CONFIG.backend, "-i", &CONFIG.device, &CONFIG.audio_file])
 			.stdin(std::process::Stdio::piped())
 			.spawn()?;
 
@@ -84,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 		let resp = if let serde_json::Value::String(s) = 
 			check_err(client.post("https://api.openai.com/v1/audio/transcriptions")
-				.header("Authorization", &*auth_header)
+				.header("Authorization", &*CONFIG.api_key)
 				.multipart(reqwest::multipart::Form::new()
 					.file("file", &*CONFIG.audio_file).await?
 					.text("model", "whisper-1"))
@@ -98,9 +113,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 		let resp = if let serde_json::Value::String(s) = 
 			check_err(client.post("https://api.openai.com/v1/chat/completions")
-				.header("Authorization", &*auth_header)
+				.header("Authorization", &*CONFIG.api_key)
 				.header("Content-Type", "application/json")
-				.body(format!(r#"{{ "model": "gpt-4o", "messages": [{{"role": "system", "content": "{}"}}, {}] }}"#,
+				.body(format!(r#"{{ "model": "gpt-4o", "messages": [{}, {}] }}"#,
 					CONFIG.prompt, messages.iter().enumerate().fold(String::with_capacity(100), 
 						|acc, (i, s)| if i == messages.len()-1 { acc + s } else { acc + s + "," })))
 				.send().await?).await
@@ -115,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		if messages.len() >= CONFIG.msg_limit { messages.pop_front(); }
 
 		let resp = check_err(client.post("https://api.openai.com/v1/audio/speech")
-			.header("Authorization", &*auth_header)
+			.header("Authorization", &*CONFIG.api_key)
 			.header("Content-Type", "application/json")
 			.body(serde_json::json!({ "model": "tts-1", "input": resp, "voice": "onyx" }).to_string())
 			.send().await?).await
