@@ -29,7 +29,7 @@ fn api_key<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error
 
 fn prompt<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
 	let s: String = Deserialize::deserialize(de)?;
-	Ok(Box::from(format!(r#"{{"role": "system", "content": "{s}"}}"#)))
+	Ok(Box::from(serde_json::json!({"role": "system", "content": escape_json(&s)}).to_string()))
 }
 
 #[cfg(unix)]
@@ -54,7 +54,7 @@ static CONFIG: LazyLock<Config> = LazyLock::new(||
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
 	if std::env::args().nth(1) == Some(String::from("keytest")) {
-		rdev::listen(|e| println!("{:?}", e)).unwrap();
+		rdev::listen(|e| println!("{e:?}")).unwrap();
 		return Ok(());
 	}
 
@@ -112,7 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 			else { panic!("Invalid response") };
 
 		println!("Transcription: {resp}");
-		messages.push_back(serde_json::json!({ "role": "user", "content": resp }).to_string());
+		messages.push_back(serde_json::json!({ "role": "user", "content": escape_json(&resp) }).to_string());
 
 		let resp = if let serde_json::Value::String(s) = 
 			check_err(client.post("https://api.openai.com/v1/chat/completions")
@@ -152,4 +152,9 @@ async fn check_err(thing: reqwest::Response) -> reqwest::Response {
 		Ok(_) => thing,
 		Err(e) => panic!("Error: {e}, {}", String::from_utf8_lossy(&thing.bytes().await.unwrap())),
 	}
+}
+
+fn escape_json(s: &str) -> String {
+	s.replace("\\", "\\\\").replace("\"", "\\\"")
+		.replace("\n", "\\n").replace("'", "\\'")
 }
