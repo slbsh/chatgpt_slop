@@ -23,24 +23,24 @@ struct Config {
 }
 
 fn api_key<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
-	let s: &str = Deserialize::deserialize(de)?;
+	let s: String = Deserialize::deserialize(de)?;
 	Ok(Box::from(format!("Bearer {s}")))
 }
 
 fn prompt<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
-	let s: &str = Deserialize::deserialize(de)?;
+	let s: String = Deserialize::deserialize(de)?;
 	Ok(Box::from(format!(r#"{{"role": "system", "content": "{s}"}}"#)))
 }
 
 #[cfg(unix)]
 fn device<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
-	let s: &str = Deserialize::deserialize(de)?;
+	let s: String = Deserialize::deserialize(de)?;
 	Ok(Box::from(s))
 }
 
 #[cfg(windows)]
 fn device<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
-	let s: &str = Deserialize::deserialize(de)?;
+	let s: String = Deserialize::deserialize(de)?;
 	Ok(Box::from(format!("audio={s}")))
 }
 
