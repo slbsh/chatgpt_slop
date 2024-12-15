@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 use std::collections::VecDeque;
 use std::io::Write;
+use std::num::NonZero;
 
 use rdev::{Event, EventType, Key};
 use serde::Deserialize;
@@ -18,7 +19,7 @@ struct Config {
 	device:     Box<str>,
 	backend:    Box<str>,
 	#[serde(default)]
-	keycode:    Option<u32>,
+	keycode:    Option<NonZero<u32>>,
 	global_listen: bool,
 }
 
@@ -68,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 			println!("{p}");
 			let key = match &CONFIG.keycode {
-				Some(k) => Key::Unknown(*k),
+				Some(k) => Key::Unknown(k.get()),
 				None    => DEFAULT_KEY,
 			};
 
