@@ -1,8 +1,7 @@
-api_key = "KEYYYYYYYYYYYYYYYYYYY"
+api_key = "YOUR_API_KEY"
 audio_file = "audio.mp3"
-msg_limit = 18
-global_listen = false
-device = "default" # windows needs this set to device name
+msg_limit  = 18
+device  = "default" # windows needs this set to device name
 backend = "alsa" # "dshow" for windows
-# keycode = 420
+# keycode = 420 # by default its f1
 # prompt = ""

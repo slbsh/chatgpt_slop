@@ -20,7 +20,6 @@ struct Config {
 	backend:    Box<str>,
 	#[serde(default)]
 	keycode:    Option<NonZero<u32>>,
-	global_listen: bool,
 }
 
 fn api_key<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
@@ -30,6 +29,7 @@ fn api_key<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error
 
 fn prompt<'de, D: serde::Deserializer<'de>>(de: D) -> Result<Box<str>, D::Error> {
 	let s: String = Deserialize::deserialize(de)?;
+	if s.is_empty() { return Ok(Box::from("")); }
 	Ok(Box::from(serde_json::json!({"role": "system", "content": escape_json(&s)}).to_string()))
 }
 
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 		cmd.stdin.as_mut().unwrap().write_all(b"q")?; // lol
 		cmd.wait().unwrap();
 
-		let resp = if let serde_json::Value::String(s) = 
+		let serde_json::Value::String(resp) = 
 			check_err(client.post("https://api.openai.com/v1/audio/transcriptions")
 				.header("Authorization", &*CONFIG.api_key)
 				.multipart(reqwest::multipart::Form::new()
@@ -99,25 +99,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 					.text("model", "whisper-1"))
 				.send().await?).await
 				.json::<serde_json::Value>().await?
-				.get_mut("text").unwrap().take() { s }
+				.get_mut("text").unwrap().take()
 			else { panic!("Invalid response") };
 
 		println!("Transcription: {resp}");
 		messages.push_back(serde_json::json!({ "role": "user", "content": escape_json(&resp) }).to_string());
 
-		let resp = if let serde_json::Value::String(s) = 
+		let serde_json::Value::String(resp) = 
 			check_err(client.post("https://api.openai.com/v1/chat/completions")
 				.header("Authorization", &*CONFIG.api_key)
 				.header("Content-Type", "application/json")
-				.body(format!(r#"{{ "model": "gpt-4o", "messages": [{}, {}] }}"#,
-					CONFIG.prompt, messages.iter().enumerate().fold(String::with_capacity(100), 
+				.body(format!(r#"{{ "model": "gpt-4o", "messages": [{}{} {}] }}"#,
+					CONFIG.prompt, if !CONFIG.prompt.is_empty() { "," } else { "" },
+					messages.iter().enumerate().fold(String::with_capacity(100), 
 						|acc, (i, s)| if i == messages.len()-1 { acc + s } else { acc + s + "," })))
 				.send().await?).await
 				.json::<serde_json::Value>().await?
 				.get_mut("choices").unwrap().take()
 				.get_mut(0).unwrap().take()
 				.get_mut("message").unwrap().take()
-				.get_mut("content").unwrap().take() { s }
+				.get_mut("content").unwrap().take()
 			else { panic!("Invalid response") };
 
 		println!("Response: {resp}");
@@ -146,6 +147,11 @@ async fn check_err(thing: reqwest::Response) -> reqwest::Response {
 }
 
 fn escape_json(s: &str) -> String {
-	s.replace("\\", "\\\\").replace("\"", "\\\"")
-		.replace("\n", "\\n").replace("'", "\\'")
+	s.chars().fold(String::with_capacity(s.len()), |mut acc, c| match c {
+		'\\' => acc + "\\\\",
+		'"'  => acc + "\\\"",
+		'\n' => acc + "\\n",
+		'\'' => acc + "\\'",
+		_    => {acc.push(c); acc}
+	})
 }
