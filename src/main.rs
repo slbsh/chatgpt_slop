@@ -61,42 +61,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let mut messages: VecDeque<String> = VecDeque::new();
 	let client = reqwest::Client::new();
-	let mut lines = std::io::stdin().lines();
 
-	let mut block: Box<dyn FnMut(&'static str)> = match CONFIG.global_listen {
-		true => Box::new(|p| {
-			const DEFAULT_KEY: Key = Key::F1;
+	let (tx, rx) = std::sync::mpsc::channel();
 
-			println!("{p}");
-			let key = match &CONFIG.keycode {
-				Some(k) => Key::Unknown(k.get()),
-				None    => DEFAULT_KEY,
-			};
-
-			let (tx, rx) = std::sync::mpsc::channel();
-			let handle = tokio::spawn(async move {
-				rdev::listen(move |e|
-					if let Event { event_type: EventType::KeyPress(k), .. } = e 
-						{ if k == key { let _ = tx.send(()); } }).unwrap() });
-			rx.recv().unwrap();
-			handle.abort();
-		}),
-		false => Box::new(|p| {
-			print!("{p}");
-			std::io::stdout().flush().unwrap();
-			lines.next().unwrap().unwrap();
-		}),
+	const DEFAULT_KEY: Key = Key::F1;
+	let key = match &CONFIG.keycode {
+		Some(k) => Key::Unknown(k.get()),
+		None    => DEFAULT_KEY,
 	};
 
+	tokio::spawn(async move {
+		rdev::listen(move |e|
+			if let Event { event_type: EventType::KeyPress(k), .. } = e 
+				{ if k == key { tx.send(()).unwrap(); } }).unwrap()
+	});
+
 	loop {
-		block("Press key to start");
+		println!("Press key to start");
+		rx.recv().unwrap();
 		
 		let mut cmd = std::process::Command::new("ffmpeg")
 			.args(["-y", "-loglevel", "error", "-f", &CONFIG.backend, "-i", &CONFIG.device, &CONFIG.audio_file])
 			.stdin(std::process::Stdio::piped())
 			.spawn()?;
 
-		block("Recording..");
+		println!("Recording..");
+		rx.recv().unwrap();
 
 		cmd.stdin.as_mut().unwrap().write_all(b"q")?; // lol
 		cmd.wait().unwrap();
